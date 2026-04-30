@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>サイコロ転がしパズル - 最終調整版</title>
+<style>
+  body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background-color: #f0f2f5;
+    color: #333;
+    margin: 0;
+    padding: 20px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+  h1 { font-size: 24px; margin-bottom: 20px; }
+
+  /* PCレイアウト用コンテナ */
+  #game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    width: 100%;
+    max-width: 900px;
+  }
+  #left-column { display: flex; flex-direction: column; align-items: center; width: 100%; }
+  #right-column { display: flex; flex-direction: column; align-items: center; width: 100%; }
+
+  @media (min-width: 768px) {
+    #game-container { flex-direction: row; align-items: flex-start; justify-content: center; gap: 50px; }
+    #ui-panel { max-width: 400px; }
+  }
+
+  /* スコア・タイマー */
+  #header-info {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 320px;
+    background: #fff;
+    padding: 10px 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-sizing: border-box;
+    font-weight: bold;
+    font-size: 16px;
+    margin-bottom: 15px;
+  }
+  #level-badge { color: #1976d2; margin-right: 5px;}
+  .time-warning { color: #e53935; }
+
+  /* 盤面 */
+  #game-wrapper { perspective: 1200px; width: 300px; height: 300px; margin-bottom: 20px; }
+  #board {
+    width: 300px; height: 300px;
+    transform-style: preserve-3d;
+    transform: rotateX(60deg) rotateZ(-45deg); 
+    background: #fff;
+    border: 2px solid #aaa;
+    position: relative;
+    box-shadow: -15px 20px 20px rgba(0,0,0,0.15);
+  }
+  .cell { width: 60px; height: 60px; box-sizing: border-box; border: 1px solid #ccc; position: absolute; }
+  .cell.target { background-color: #ffe6e6; border: 2px solid #ff4d4d; }
+
+  /* サイコロ */
+  #die-pos { position: absolute; width: 60px; height: 60px; transition: transform 0.3s ease-out; transform-style: preserve-3d; }
+  #die-rot { width: 100%; height: 100%; position: absolute; transition: transform 0.3s ease-out; transform-style: preserve-3d; }
+  .face {
+    position: absolute; width: 60px; height: 60px; background: #fff; border: 1px solid #ccc;
+    border-radius: 6px; box-sizing: border-box; display: grid;
+    grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); padding: 6px; gap: 2px;
+  }
+  .face-top    { transform: translateZ(30px); background-color: #fafdfa;}
+  .face-bottom { transform: rotateX(180deg) translateZ(30px); }
+  .face-front  { transform: rotateX(-90deg) translateZ(30px); background-color: #f0f0f0;}
+  .face-back   { transform: rotateX(90deg) translateZ(30px); }
+  .face-right  { transform: rotateY(90deg) translateZ(30px); background-color: #e8e8e8;}
+  .face-left   { transform: rotateY(-90deg) translateZ(30px); }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background-color: #333; justify-self: center; align-self: center; }
+  .dot.red { background-color: #e53935; width: 16px; height: 16px; }
+
+  /* 操作パネル */
+  #ui-panel {
+    background: white; padding: 20px; border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05); width: 100%; max-width: 320px; text-align: center; box-sizing: border-box;
+  }
+  #target-msg { font-size: 18px; margin-bottom: 15px; padding: 10px; background: #fdf0f0; border-radius: 6px; font-weight: bold; }
+  #target-msg span { color: #e53935; font-size: 24px;}
+  #message { font-weight: bold; min-height: 80px; margin-bottom: 15px; color: #1976d2; font-size: 15px; display: flex; flex-direction: column; justify-content: center; }
+
+  .controls { display: grid; grid-template-columns: 70px 70px 70px; grid-template-rows: 70px 70px 70px; gap: 8px; justify-content: center; margin-bottom: 15px; }
+  button.dir-btn { font-size: 28px; cursor: pointer; background: #fff; border: 1px solid #ccc; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+  button.dir-btn:active { background: #e0e0e0; transform: translateY(2px); box-shadow: none; }
+  button.dir-btn:disabled { opacity: 0.5; pointer-events: none; }
+  .btn-up { grid-column: 2; grid-row: 1; } .btn-right { grid-column: 3; grid-row: 2; } .btn-left { grid-column: 1; grid-row: 2; } .btn-down { grid-column: 2; grid-row: 3; }
+
+  .btn-group { display: flex; gap: 10px; width: 100%; }
+  button.action-btn { flex: 1; padding: 14px; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; font-weight: bold; }
+  .btn-skip { background: #ff9800; } .btn-next { background: #4CAF50; display: none; }
+  .pc-hint { color: #888; font-size: 13px; margin-top: 15px; }
+
+  /* 解答ステップ */
+  .step-btn { font-size: 20px; cursor: pointer; background: #fff; border: 2px solid #ccc; border-radius: 8px; width: 40px; height: 40px; display: flex; justify-content: center; align-items: center; }
+  .step-btn.active { background: #ff9800; color: white; border-color: #f57c00; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0% { transform: scale(1); } 70% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+  /* スタート画面 */
+  #start-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+  .level-btn { padding: 15px 30px; font-size: 18px; margin-bottom: 15px; width: 280px; border: none; border-radius: 30px; cursor: pointer; font-weight: bold; color: white; }
+  .bg-beginner { background: #4CAF50; } .bg-intermediate { background: #FF9800; } .bg-advanced { background: #F44336; }
+</style>
+</head>
+<body>
+
+<div id="start-screen">
+  <h1>サイコロ転がしパズル</h1>
+  <p id="result-text">制限時間：3分</p>
+  <div id="level-buttons">
+    <button class="level-btn bg-beginner" onclick="startGame('beginner')">初級 (最短3〜4手)</button>
+    <button class="level-btn bg-intermediate" onclick="startGame('intermediate')">中級 (最短5〜6手)</button>
+    <button class="level-btn bg-advanced" onclick="startGame('advanced')">上級 (最短7手以上)</button>
+  </div>
+</div>
+
+<h1>空間把握トレーニング</h1>
+
+<div id="game-container">
+  <div id="left-column">
+    <div id="header-info">
+      <div><span id="level-badge"></span><span id="score-display">正解数: 0</span></div>
+      <div id="time-display">残り 3:00</div>
+    </div>
+    <div id="game-wrapper"><div id="board"></div></div>
+  </div>
+
+  <div id="right-column">
+    <div id="ui-panel">
+      <div id="target-msg">目標: 赤マスで上の目を <span></span> にする</div>
+      <div id="message"></div>
+      <div class="controls">
+        <button class="dir-btn btn-up" onclick="handleInput('up')">↖</button>
+        <button class="dir-btn btn-left" onclick="handleInput('left')">↙</button>
+        <button class="dir-btn btn-right" onclick="handleInput('right')">↗</button>
+        <button class="dir-btn btn-down" onclick="handleInput('down')">↘</button>
+      </div>
+      <div class="btn-group">
+        <button id="skip-btn" class="action-btn btn-skip" onclick="skipPuzzle()">スキップ (解答を見る)</button>
+        <button id="next-btn" class="action-btn btn-next" onclick="nextPuzzle()">次の問題へ</button>
+      </div>
+      <div class="pc-hint">※PCは矢印キーでも操作可能です</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===============================================
+  // 【設定】終了カウントダウン音源の秒数を指定
+  // timeout.mp3 が何秒のファイルか、ここに入力してください。
+  // （例：10秒の音声なら 10 にする）
+  // ===============================================
+  const COUNTDOWN_SECONDS = 10; 
+
+
+  // 音声準備
+  let rollSound = null;
+  let timeoutSound = null;
+  let bgm = null;
+  let isAudioInitialized = false;
+
+  function initAudio() {
+    if (isAudioInitialized) return;
+    try {
+      rollSound = new Audio('roll.mp3');
+      timeoutSound = new Audio('timeout.mp3');
+      bgm = new Audio('bgm.mp3');
+      bgm.loop = true;
+      bgm.volume = 0.5;
+      isAudioInitialized = true;
+    } catch(e) {
+      console.warn("音声の初期化をスキップしました", e);
+    }
+  }
+
+  const BOARD_SIZE = 5;
+  const CELL_SIZE = 60;
+  let dieX = 0, dieY = 0, targetX = 0, targetY = 0, targetFace = 1;
+  let topFace = 1, frontFace = 2, rightFace = 3;
+  let currentTransform = "", isMoving = false, isCleared = false, isPlaying = false;
+  let score = 0, timeLeft = 180, timerInterval = null, currentLevel = 'beginner';
+  let solutionSteps = [], currentStepIndex = 0;
+
+  const puzzlePool = { beginner: [], intermediate: [], advanced: [] };
+  const levelNames = { beginner: '初級', intermediate: '中級', advanced: '上級' };
+
+  function precomputePuzzles() {
+    let queue = [{ x: 0, y: 0, top: 1, front: 2, right: 3, dist: 0 }];
+    let visited = new Set();
+    visited.add(`0-0-1-2-3`);
+    let minDist = {}; 
+    while(queue.length > 0) {
+      let cur = queue.shift();
+      let key = `${cur.x}-${cur.y}-${cur.top}`;
+      if (!(key in minDist)) minDist[key] = cur.dist;
+      const dirs = ['up', 'down', 'left', 'right'];
+      for (let d of dirs) {
+        let next = calcNextState(cur.x, cur.y, cur.top, cur.front, cur.right, d);
+        if (next) {
+          let fk = `${next.x}-${next.y}-${next.top}-${next.front}-${next.right}`;
+          if (!visited.has(fk)) { visited.add(fk); queue.push({ ...next, dist: cur.dist + 1 }); }
+        }
+      }
+    }
+    for (let x = 0; x < BOARD_SIZE; x++) {
+      for (let y = 0; y < BOARD_SIZE; y++) {
+        if (x === 0 && y === 0) continue; 
+        for (let top = 1; top <= 6; top++) {
+          let k = `${x}-${y}-${top}`;
+          if (k in minDist) {
+            let d = minDist[k];
+            if (d === 3 || d === 4) puzzlePool.beginner.push({x, y, top});
+            else if (d === 5 || d === 6) puzzlePool.intermediate.push({x, y, top});
+            else if (d >= 7) puzzlePool.advanced.push({x, y, top});
+          }
+        }
+      }
+    }
+  }
+
+  function getFaceHTML(num) {
+    let dots = '';
+    const pos = { 1: '2/2', 2: '1/1,3/3', 3: '1/1,2/2,3/3', 4: '1/1,1/3,3/1,3/3', 5: '1/1,1/3,2/2,3/1,3/3', 6: '1/1,1/2,1/3,3/1,3/2,3/3' };
+    pos[num].split(',').forEach(p => { dots += `<div class="dot ${num===1?'red':''}" style="grid-area: ${p};"></div>`; });
+    return dots;
+  }
+
+  function renderBoard() {
+    const board = document.getElementById('board'); board.innerHTML = '';
+    for (let y = 0; y < BOARD_SIZE; y++) {
+      for (let x = 0; x < BOARD_SIZE; x++) {
+        let cell = document.createElement('div'); cell.className = 'cell' + (x===targetX && y===targetY ? ' target':'');
+        cell.style.left = (x*CELL_SIZE)+'px'; cell.style.top = (y*CELL_SIZE)+'px'; board.appendChild(cell);
+      }
+    }
+    let dp = document.createElement('div'); dp.id = 'die-pos';
+    let dr = document.createElement('div'); dr.id = 'die-rot';
+    [{c:'face-top',n:1},{c:'face-front',n:2},{c:'face-right',n:3},{c:'face-left',n:4},{c:'face-back',n:5},{c:'face-bottom',n:6}].forEach(f=>{
+      let div = document.createElement('div'); div.className = `face ${f.c}`; div.innerHTML = getFaceHTML(f.n); dr.appendChild(div);
+    });
+    dp.appendChild(dr); board.appendChild(dp);
+  }
+
+  function startGame(level) {
+    initAudio();
+    try {
+      if (bgm) {
+        bgm.currentTime = 0;
+        bgm.play().catch(e => console.warn("BGMスキップ:", e));
+      }
+    } catch(e) {}
+
+    currentLevel = level;
+    document.getElementById('start-screen').style.display = 'none';
+    score = 0; timeLeft = 180;
+    document.getElementById('level-badge').innerText = `【${levelNames[currentLevel]}】`;
+    document.getElementById('score-display').innerText = `正解数: ${score}`;
+    isPlaying = true;
+    
+    // タイマー処理
+    timerInterval = setInterval(() => {
+      timeLeft--; updateTimerDisplay();
+      
+      // 残り秒数がカウントダウンの秒数と一致したら終了音源を再生開始
+      if (timeLeft === COUNTDOWN_SECONDS) {
+          try {
+              if (timeoutSound) {
+                  timeoutSound.currentTime = 0;
+                  timeoutSound.play().catch(e=>{});
+              }
+          } catch(e) {}
+      }
+
+      if (timeLeft <= 0) endGame();
+    }, 1000);
+    nextPuzzle();
+  }
+
+  function updateTimerDisplay() {
+    const m = Math.floor(timeLeft/60), s = ('0'+(timeLeft%60)).slice(-2);
+    const el = document.getElementById('time-display'); el.innerText = `残り ${m}:${s}`;
+    if (timeLeft <= 30) el.classList.add('time-warning'); else el.classList.remove('time-warning');
+  }
+
+  function endGame() {
+    clearInterval(timerInterval);
+    isPlaying = false;
+    try {
+      if (bgm) bgm.pause();
+      // timeoutSound はカウントダウンで再生済みのため、ここでは再生しません
+    } catch(e) {}
+    alert(`終了！\n正解数: ${score}問`);
+    document.getElementById('start-screen').style.display = 'flex';
+    document.getElementById('result-text').innerText = `前回スコア: ${score}問`;
+  }
+
+  function nextPuzzle() {
+    let pool = puzzlePool[currentLevel];
+    if (!pool || pool.length === 0) return;
+    let p = pool[Math.floor(Math.random()*pool.length)];
+    targetX = p.x; targetY = p.y; targetFace = p.top;
+    dieX = 0; dieY = 0; topFace = 1; frontFace = 2; rightFace = 3;
+    currentTransform = ""; isMoving = false; isCleared = false;
+    document.querySelector('#target-msg span').innerText = `[ ${targetFace} ]`;
+    document.getElementById('message').innerText = '';
+    document.getElementById('skip-btn').style.display = 'block';
+    document.getElementById('next-btn').style.display = 'none';
+    renderBoard(); updateVisuals();
+  }
+
+  function updateVisuals() {
+    const dp = document.getElementById('die-pos'), dr = document.getElementById('die-rot');
+    dp.style.transform = `translate(${dieX*CELL_SIZE}px, ${dieY*CELL_SIZE}px) translateZ(30px)`;
+    dr.style.transform = currentTransform;
+    setTimeout(() => { if (!isCleared && isPlaying) checkWin(); isMoving = false; }, 300);
+  }
+
+  function calcNextState(x,y,t,f,r,dir) {
+    if (dir==='up' && y>0) return {x, y:y-1, top:f, front:7-t, right:r};
+    if (dir==='down' && y<BOARD_SIZE-1) return {x, y:y+1, top:7-f, front:t, right:r};
+    if (dir==='left' && x>0) return {x:x-1, y, top:r, front:f, right:7-t};
+    if (dir==='right' && x<BOARD_SIZE-1) return {x:x+1, y, top:7-r, front:f, right:t};
+    return null;
+  }
+
+  // プレイヤーの入力を受け付ける関数（模範解答モードにも対応）
+  function handleInput(dir) {
+    if (isMoving || !isPlaying) return;
+    
+    if (isCleared) {
+        // 模範解答モード中：正解の方向キーが押された時だけ進む
+        if (solutionSteps && currentStepIndex < solutionSteps.length) {
+            if (solutionSteps[currentStepIndex].id === dir) {
+                playStep(currentStepIndex);
+            }
+        }
+        return;
+    }
+    
+    // 通常プレイ時の移動処理
+    executeMove(dir);
+  }
+
+  // 実際にサイコロを動かす関数
+  function executeMove(dir) {
+    let next = calcNextState(dieX, dieY, topFace, frontFace, rightFace, dir);
+    if(!next) return;
+    isMoving = true;
+    
+    try {
+      if (rollSound) {
+        rollSound.currentTime = 0;
+        rollSound.play().catch(e=>{});
+      }
+    } catch(e) {}
+
+    dieX = next.x; dieY = next.y; topFace = next.top; frontFace = next.front; rightFace = next.right;
+    if (dir === 'up') currentTransform = "rotateX(90deg) " + currentTransform;
+    if (dir === 'down') currentTransform = "rotateX(-90deg) " + currentTransform;
+    if (dir === 'left') currentTransform = "rotateY(-90deg) " + currentTransform;
+    if (dir === 'right') currentTransform = "rotateY(90deg) " + currentTransform;
+    updateVisuals();
+  }
+
+  function checkWin() {
+    if (dieX === targetX && dieY === targetY) {
+      if (topFace === targetFace) {
+        document.getElementById('message').innerHTML = '<span style="color:#e91e63;">正解！🎉</span>';
+        isCleared = true; score++; document.getElementById('score-display').innerText = `正解数: ${score}`;
+        setTimeout(nextPuzzle, 1000);
+      } else {
+        document.getElementById('message').innerText = `上の目は「${topFace}」です`;
+      }
+    }
+  }
+
+  function skipPuzzle() {
+    if (!isPlaying || isCleared) return;
+    isCleared = true;
+    
+    let q = [{x:dieX, y:dieY, top:topFace, front:frontFace, right:rightFace, path:[]}], v = new Set();
+    while(q.length > 0) {
+      let cur = q.shift();
+      if(cur.x===targetX && cur.y===targetY && cur.top===targetFace) { solutionSteps = cur.path; break; }
+      [{id:'up',l:'↖'},{id:'down',l:'↘'},{id:'left',l:'↙'},{id:'right',l:'↗'}].forEach(d => {
+        let n = calcNextState(cur.x, cur.y, cur.top, cur.front, cur.right, d.id);
+        if(n) {
+          let k = `${n.x}-${n.y}-${n.top}-${n.front}-${n.right}`;
+          if(!v.has(k)) { v.add(k); q.push({...n, path:[...cur.path, {id:d.id, label:d.l}]}); }
+        }
+      });
+    }
+    currentStepIndex = 0;
+    document.getElementById('skip-btn').style.display = 'none';
+    renderSteps();
+  }
+
+  function renderSteps() {
+    let h = '<div style="color:#ff9800; font-size:13px;">模範解答（光っている矢印を押して進めてください）</div><div style="display:flex; justify-content:center; gap:5px; flex-wrap:wrap; margin-top:5px;">';
+    solutionSteps.forEach((s, i) => {
+      let active = (i === currentStepIndex);
+      h += `<button class="step-btn ${active?'active':''}" onclick="playStep(${i})" ${active?'':'disabled'} style="opacity:${i<currentStepIndex?0.3:1}">${s.label}</button>`;
+    });
+    document.getElementById('message').innerHTML = h + '</div>';
+  }
+
+  function playStep(i) {
+    if (i !== currentStepIndex || isMoving) return;
+    executeMove(solutionSteps[i].id);
+    currentStepIndex++;
+    if (currentStepIndex < solutionSteps.length) renderSteps();
+    else { setTimeout(()=> { document.getElementById('next-btn').style.display = 'block'; }, 500); }
+  }
+
+  // キーボード入力を handleInput に渡す
+  document.addEventListener('keydown', (e) => {
+    if (!isPlaying) return;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+    }
+    if (e.key === 'ArrowUp') handleInput('up');
+    if (e.key === 'ArrowDown') handleInput('down');
+    if (e.key === 'ArrowLeft') handleInput('left');
+    if (e.key === 'ArrowRight') handleInput('right');
+  });
+
+  window.onload = precomputePuzzles;
+</script>
+</body>
+</html>
